@@ -32,11 +32,11 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.everit.jira.hr.admin.ManageSchemeComponent.SchemeDTO;
 import org.everit.jira.hr.admin.SchemeUsersComponent.QUserSchemeEntityParameter;
-import org.everit.jira.hr.admin.schema.qdsl.QDateRange;
 import org.everit.jira.hr.admin.schema.qdsl.QHolidayScheme;
 import org.everit.jira.hr.admin.schema.qdsl.QPublicHoliday;
 import org.everit.jira.hr.admin.schema.qdsl.QUserHolidayScheme;
 import org.everit.jira.hr.admin.schema.qdsl.QWorkScheme;
+import org.everit.jira.hr.admin.schema.qdsl.util.DateRangeUtil;
 import org.everit.jira.hr.admin.util.DateUtil;
 import org.everit.web.partialresponse.PartialResponseBuilder;
 
@@ -216,7 +216,10 @@ public class HolidaySchemesServlet extends AbstractPageServlet {
       return;
     }
 
+    Long userCount = schemeUsersComponent.schemeUserCount(schemeIdParameter);
+
     vars.put("schemeId", schemeId);
+    vars.put("schemeUserCount", userCount);
     vars.put("schemeUsers", schemeUsersComponent);
     vars.put("locale", resp.getLocale());
 
@@ -230,12 +233,16 @@ public class HolidaySchemesServlet extends AbstractPageServlet {
         prb.replace("#holiday-schemes-tabs-container", (writer) -> {
           pageTemplate.render(writer, vars, resp.getLocale(), "holiday-schemes-tabs-container");
         });
+        prb.replace("#delete-schema-validation-dialog", (writer) -> {
+          DeleteSchemaValidationComponent.INSTANCE.render(writer, resp.getLocale(), userCount);
+        });
       }
       return;
     }
 
     vars.put("manageSchemeComponent", manageSchemeComponent);
     vars.put("areYouSureDialogComponent", AreYouSureDialogComponent.INSTANCE);
+    vars.put("deleteSchemaValidationComponent", DeleteSchemaValidationComponent.INSTANCE);
     pageTemplate.render(resp.getWriter(), vars, resp.getLocale(), null);
   }
 
@@ -388,8 +395,8 @@ public class HolidaySchemesServlet extends AbstractPageServlet {
       new SQLDeleteClause(connection, configuration, qUserHolidayScheme)
           .where(qUserHolidayScheme.dateRangeId.in(dateRangeIds)).execute();
 
-      new SQLDeleteClause(connection, configuration, QDateRange.dateRange)
-          .where(QDateRange.dateRange.dateRangeId.in(dateRangeIds)).execute();
+      new DateRangeUtil(connection, configuration)
+          .removeDateRange(dateRangeIds.toArray(new Long[dateRangeIds.size()]));
 
       dateRangeIds = sqlQuery.fetch();
     }

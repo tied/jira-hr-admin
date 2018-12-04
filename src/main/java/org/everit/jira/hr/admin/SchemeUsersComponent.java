@@ -31,7 +31,9 @@ import java.util.TreeSet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.commons.lang.StringUtils;
 import org.everit.jira.hr.admin.schema.qdsl.QDateRange;
+import org.everit.jira.hr.admin.schema.qdsl.util.DateRangeUtil;
 import org.everit.jira.hr.admin.util.AvatarUtil;
 import org.everit.jira.hr.admin.util.DateUtil;
 import org.everit.jira.hr.admin.util.LocalizedTemplate;
@@ -101,7 +103,7 @@ public class SchemeUsersComponent {
 
   }
 
-  private static final int PAGE_SIZE = 50;
+  private static final int PAGE_SIZE = 500000;
 
   private static final Set<String> SUPPORTED_ACTIONS;
 
@@ -150,8 +152,7 @@ public class SchemeUsersComponent {
               .where(qUserSchemeEntityParameter.userSchemeId.eq(userSchemeId))
               .execute();
 
-      new SQLDeleteClause(connection, configuration, qDateRange)
-          .where(qDateRange.dateRangeId.eq(dateRangeId)).execute();
+      new DateRangeUtil(connection, configuration).removeDateRange(dateRangeId);
       return null;
     }));
   }
@@ -227,9 +228,13 @@ public class SchemeUsersComponent {
   private void processDelete(final HttpServletRequest req, final HttpServletResponse resp) {
     Long userSchemeId = Long.parseLong(req.getParameter("scheme-user-userscheme-id"));
     delete(userSchemeId);
+    Long userCount = schemeUserCount(req.getParameter("schemeId"));
 
     try (PartialResponseBuilder prb = new PartialResponseBuilder(resp)) {
       prb.replace("#scheme-user-table", render(req, resp.getLocale(), "scheme-user-table"));
+      prb.replace("#delete-schema-validation-dialog", (writer) -> {
+        DeleteSchemaValidationComponent.INSTANCE.render(writer, resp.getLocale(), userCount);
+      });
     }
   }
 
@@ -312,9 +317,13 @@ public class SchemeUsersComponent {
     }
 
     save(schemeId, userName, startDate, endDateExcluded);
+    Long userCount = schemeUserCount(String.valueOf(schemeId));
     try (PartialResponseBuilder prb = new PartialResponseBuilder(resp)) {
       renderAlertOnPrb("Assiging user successful", "info", prb, resp.getLocale());
       prb.replace("#scheme-user-table", render(req, resp.getLocale(), "scheme-user-table"));
+      prb.replace("#delete-schema-validation-dialog", (writer) -> {
+        DeleteSchemaValidationComponent.INSTANCE.render(writer, resp.getLocale(), userCount);
+      });
     }
   }
 
@@ -446,11 +455,8 @@ public class SchemeUsersComponent {
           .from(qCwdUser)
           .where(qCwdUser.userName.eq(userName)).fetchOne();
 
-      QDateRange qDateRange = QDateRange.dateRange;
-      Long dateRangeId = new SQLInsertClause(connection, configuration, qDateRange)
-          .set(qDateRange.startDate, startDate)
-          .set(qDateRange.endDateExcluded, new Date(endDateExcluded.getTime()))
-          .executeWithKey(qDateRange.dateRangeId);
+      Long dateRangeId =
+          new DateRangeUtil(connection, configuration).createDateRange(startDate, endDateExcluded);
 
       new SQLInsertClause(connection, configuration,
           qUserSchemeEntityParameter.userSchemeEntityPath)
@@ -462,20 +468,40 @@ public class SchemeUsersComponent {
     }));
   }
 
+  /**
+   * ▼ Count users belonging to a scheme (work or holiday scheme).
+   *
+   * @param schemeIdString
+   *          Scheme id in string, usually from request parameter.
+   * @return If parameter null or empty, return 0. Otherwise, returns the number of users belonging
+   *         to the specified schema.
+   */
+  public Long schemeUserCount(final String schemeIdString) {
+    if (StringUtils.isEmpty(schemeIdString)) {
+      return Long.valueOf(0);
+    } else {
+      Long schemeId = Long.valueOf(schemeIdString);
+      return querydslSupport.execute((connection, configuration) -> {
+        // select count(user_id) from everit_jira_user_work_scheme where work_scheme_id = schemeId;
+        return new SQLQuery<Long>(connection, configuration)
+            .from(qUserSchemeEntityParameter.userSchemeEntityPath)
+            .where(qUserSchemeEntityParameter.userSchemeSchemeId.eq(schemeId))
+            .fetchCount();
+      });
+    }
+  }
+
   private void update(final long recordId, final long schemeId, final long userId,
       final Date startDate, final Date endDateExcluded) {
     transactionTemplate.execute(() -> querydslSupport.execute((connection, configuration) -> {
-      QDateRange qDateRange = QDateRange.dateRange;
 
       Long dateRangeId = new SQLQuery<Long>(connection, configuration)
           .select(qUserSchemeEntityParameter.dateRangeId)
           .from(qUserSchemeEntityParameter.userSchemeEntityPath)
           .where(qUserSchemeEntityParameter.userSchemeId.eq(recordId)).fetchOne();
 
-      new SQLUpdateClause(connection, configuration, qDateRange)
-          .set(qDateRange.startDate, startDate)
-          .set(qDateRange.endDateExcluded, endDateExcluded)
-          .where(qDateRange.dateRangeId.eq(dateRangeId)).execute();
+      new DateRangeUtil(connection, configuration).modifyDateRange(dateRangeId, startDate,
+          endDateExcluded);
 
       new SQLUpdateClause(connection, configuration,
           qUserSchemeEntityParameter.userSchemeEntityPath)

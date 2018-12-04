@@ -35,11 +35,11 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.everit.jira.hr.admin.ManageSchemeComponent.SchemeDTO;
 import org.everit.jira.hr.admin.SchemeUsersComponent.QUserSchemeEntityParameter;
-import org.everit.jira.hr.admin.schema.qdsl.QDateRange;
 import org.everit.jira.hr.admin.schema.qdsl.QExactWork;
 import org.everit.jira.hr.admin.schema.qdsl.QUserWorkScheme;
 import org.everit.jira.hr.admin.schema.qdsl.QWeekdayWork;
 import org.everit.jira.hr.admin.schema.qdsl.QWorkScheme;
+import org.everit.jira.hr.admin.schema.qdsl.util.DateRangeUtil;
 import org.everit.web.partialresponse.PartialResponseBuilder;
 
 import com.atlassian.jira.component.ComponentAccessor;
@@ -194,11 +194,15 @@ public class WorkSchemesServlet extends AbstractPageServlet {
     }
 
     String schemeIdParameter = req.getParameter("schemeId");
+    Long userCount = schemeUsersComponent.schemeUserCount(schemeIdParameter);
+
     vars.put("schemeId", schemeIdParameter);
+    vars.put("schemeUserCount", userCount);
     vars.put("schemeUsers", schemeUsersComponent);
     vars.put("locale", resp.getLocale());
     vars.put("manageSchemeComponent", manageSchemeComponent);
     vars.put("areYouSureDialogComponent", AreYouSureDialogComponent.INSTANCE);
+    vars.put("deleteSchemaValidationComponent", DeleteSchemaValidationComponent.INSTANCE);
 
     if (schemeIdParameter != null) {
       long schemeId = Long.parseLong(schemeIdParameter);
@@ -210,6 +214,9 @@ public class WorkSchemesServlet extends AbstractPageServlet {
       try (PartialResponseBuilder prb = new PartialResponseBuilder(resp)) {
         prb.replace("#work-schemes-tabs-container", (writer) -> {
           pageTemplate.render(writer, vars, resp.getLocale(), "work-schemes-tabs-container");
+        });
+        prb.replace("#delete-schema-validation-dialog", (writer) -> {
+          DeleteSchemaValidationComponent.INSTANCE.render(writer, resp.getLocale(), userCount);
         });
       }
       return;
@@ -343,13 +350,13 @@ public class WorkSchemesServlet extends AbstractPageServlet {
         .where(qUserWorkScheme.workSchemeId.eq(schemeId)).limit(batchSize);
 
     List<Long> dateRangeIds = sqlQuery.fetch();
+    DateRangeUtil dateRangeUtil = new DateRangeUtil(connection, configuration);
 
     while (!dateRangeIds.isEmpty()) {
       new SQLDeleteClause(connection, configuration, qUserWorkScheme)
           .where(qUserWorkScheme.dateRangeId.in(dateRangeIds)).execute();
 
-      new SQLDeleteClause(connection, configuration, QDateRange.dateRange)
-          .where(QDateRange.dateRange.dateRangeId.in(dateRangeIds)).execute();
+      dateRangeUtil.removeDateRange(dateRangeIds.toArray(new Long[dateRangeIds.size()]));
 
       dateRangeIds = sqlQuery.fetch();
     }

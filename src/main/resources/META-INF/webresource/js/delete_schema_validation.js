@@ -13,30 +13,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.everit.jira.hr.admin.component;
+function DeleteSchemaValidationDialog() {
+  var _yesHandler = null;
 
-import java.util.List;
-
-public class WebComponentContext {
-
-  private final List<WebComponent> children;
-
-  private final WebComponent component;
-
-  private final WebComponentContext parentContext;
-
-  public WebComponentContext(final WebComponent component, final WebComponentContext parentContext,
-      final List<WebComponent> children) {
-    this.component = component;
-    this.parentContext = parentContext;
-    this.children = children;
+  this.show = function(yesHandler, event) {
+    if (event) {
+      event.preventDefault();
+    }
+    _yesHandler = yesHandler;
+    AJS.dialog2("#delete-schema-validation-dialog").show();
   }
 
-  public WebComponent getComponent() {
-    return component;
+  this._handleYes = function(event) {
+    event.preventDefault();
+    if (_yesHandler) {
+      _yesHandler();
+    }
+    AJS.dialog2("#delete-schema-validation-dialog").hide();
   }
 
-  public WebComponentContext getParentContext() {
-    return parentContext;
+  this._handleNo = function(event) {
+    event.preventDefault();
+    AJS.dialog2("#delete-schema-validation-dialog").hide();
   }
 }
+
+var deleteSchemaValidationDialog = new DeleteSchemaValidationDialog();
